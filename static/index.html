@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>KPSS Güncel Bilgiler</title>
+    <link rel="icon" href="/static/logo.svg" />
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <header class="app-header">
+      <div class="brand">
+        <img src="/static/logo.svg" alt="" class="brand-mark" />
+        <div>
+          <div class="brand-title">KPSS Güncel Bilgiler</div>
+          <div class="brand-subtitle" id="brandSubtitle">Yerel çalışma uygulaması</div>
+        </div>
+      </div>
+      <nav class="top-actions" aria-label="Uygulama">
+        <button class="ghost-button" id="homeButton" type="button">Ana Ekran</button>
+        <button class="ghost-button" id="wrongButton" type="button">Yanlışlar</button>
+        <button class="ghost-button" id="reviewButton" type="button">Kontrol</button>
+        <button class="ghost-button" id="reportButton" type="button">Rapor</button>
+      </nav>
+    </header>
+
+    <main id="app" class="app-main" tabindex="-1"></main>
+
+    <template id="loadingTemplate">
+      <section class="empty-state">
+        <div class="loader"></div>
+        <p>Yükleniyor</p>
+      </section>
+    </template>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>
