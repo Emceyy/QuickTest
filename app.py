@@ -118,6 +118,12 @@ def wrong_bucket_for_source(source: str) -> str:
     return "trial" if source == "trial" else "test"
 
 
+def percent(part: int, total: int) -> float:
+    if not total:
+        return 0.0
+    return round((part / total) * 100, 1)
+
+
 def update_wrong_state(
     con: sqlite3.Connection,
     question_id: int,
@@ -366,10 +372,150 @@ class KPSSHandler(SimpleHTTPRequestHandler):
 
     def api_report(self) -> None:
         with db() as con:
-            rows = con.execute("SELECT key, value, updated_at FROM import_report ORDER BY key").fetchall()
-        payload = {}
-        for row in rows:
-            payload[row["key"]] = json.loads(row["value"])
+            total_all = con.execute("SELECT COUNT(*) FROM questions").fetchone()[0]
+            total_test = con.execute(
+                "SELECT COUNT(*) FROM questions WHERE source = 'question_bank'"
+            ).fetchone()[0]
+            total_trial = con.execute("SELECT COUNT(*) FROM questions WHERE source = 'trial'").fetchone()[0]
+
+            seen_all = con.execute("SELECT COUNT(DISTINCT question_id) FROM attempts").fetchone()[0]
+            seen_by_source = {
+                "question_bank": 0,
+                "trial": 0,
+            }
+            for row in con.execute(
+                """
+                SELECT q.source, COUNT(DISTINCT a.question_id) AS seen_count
+                FROM attempts a
+                JOIN questions q ON q.id = a.question_id
+                GROUP BY q.source
+                """
+            ).fetchall():
+                seen_by_source[row["source"]] = row["seen_count"]
+
+            today = datetime.now().date().isoformat()
+            today_row = con.execute(
+                """
+                SELECT
+                    COUNT(*) AS total,
+                    SUM(CASE WHEN selected_answer IS NOT NULL THEN 1 ELSE 0 END) AS answered,
+                    SUM(CASE WHEN selected_answer IS NOT NULL AND is_correct = 1 THEN 1 ELSE 0 END) AS correct,
+                    SUM(CASE WHEN selected_answer IS NOT NULL AND is_correct = 0 THEN 1 ELSE 0 END) AS wrong,
+                    SUM(CASE WHEN selected_answer IS NULL THEN 1 ELSE 0 END) AS empty
+                FROM attempts
+                WHERE created_at LIKE ?
+                """,
+                (f"{today}%",),
+            ).fetchone()
+            all_time_row = con.execute(
+                """
+                SELECT
+                    COUNT(*) AS total,
+                    SUM(CASE WHEN selected_answer IS NOT NULL THEN 1 ELSE 0 END) AS answered,
+                    SUM(CASE WHEN selected_answer IS NOT NULL AND is_correct = 1 THEN 1 ELSE 0 END) AS correct,
+                    SUM(CASE WHEN selected_answer IS NOT NULL AND is_correct = 0 THEN 1 ELSE 0 END) AS wrong,
+                    SUM(CASE WHEN selected_answer IS NULL THEN 1 ELSE 0 END) AS empty
+                FROM attempts
+                """
+            ).fetchone()
+
+            wrong_test = con.execute("SELECT COUNT(*) FROM wrong_questions WHERE bucket = 'test'").fetchone()[0]
+            wrong_trial = con.execute("SELECT COUNT(*) FROM wrong_questions WHERE bucket = 'trial'").fetchone()[0]
+
+            top_wrong_row = con.execute(
+                """
+                SELECT
+                    CASE
+                        WHEN q.source = 'question_bank' THEN c.title
+                        ELSE 'Deneme ' || q.trial_no
+                    END AS title,
+                    q.source AS source,
+                    COUNT(*) AS wrong_count
+                FROM attempts a
+                JOIN questions q ON q.id = a.question_id
+                LEFT JOIN categories c ON c.id = q.category_id
+                WHERE a.selected_answer IS NOT NULL AND a.is_correct = 0
+                GROUP BY title, q.source
+                ORDER BY wrong_count DESC, title
+                LIMIT 1
+                """
+            ).fetchone()
+
+            report_rows = con.execute(
+                "SELECT key, value, updated_at FROM import_report ORDER BY key"
+            ).fetchall()
+
+        import_report = {row["key"]: json.loads(row["value"]) for row in report_rows}
+        question_bank_report = import_report.get("question_bank") or {}
+        trials_report = import_report.get("trials") or {}
+
+        def attempt_block(row: sqlite3.Row) -> dict[str, object]:
+            total = row["total"] or 0
+            answered = row["answered"] or 0
+            correct = row["correct"] or 0
+            return {
+                "attempts": total,
+                "answered": answered,
+                "correct": correct,
+                "wrong": row["wrong"] or 0,
+                "empty": row["empty"] or 0,
+                "accuracy": percent(correct, answered),
+            }
+
+        payload = {
+            "generatedAt": datetime.now().isoformat(timespec="seconds"),
+            "totals": {
+                "all": total_all,
+                "test": total_test,
+                "trial": total_trial,
+            },
+            "coverage": {
+                "all": {
+                    "seen": seen_all,
+                    "total": total_all,
+                    "percent": percent(seen_all, total_all),
+                },
+                "test": {
+                    "seen": seen_by_source["question_bank"],
+                    "total": total_test,
+                    "percent": percent(seen_by_source["question_bank"], total_test),
+                },
+                "trial": {
+                    "seen": seen_by_source["trial"],
+                    "total": total_trial,
+                    "percent": percent(seen_by_source["trial"], total_trial),
+                },
+            },
+            "today": attempt_block(today_row),
+            "allTime": attempt_block(all_time_row),
+            "wrong": {
+                "test": wrong_test,
+                "trial": wrong_trial,
+                "karma": wrong_test + wrong_trial,
+            },
+            "mostWrongCategory": {
+                "title": top_wrong_row["title"],
+                "source": "Deneme" if top_wrong_row["source"] == "trial" else "Test",
+                "wrongCount": top_wrong_row["wrong_count"],
+            }
+            if top_wrong_row
+            else None,
+            "import": {
+                "createdAt": import_report.get("created_at"),
+                "totalQuestions": import_report.get("total_questions", total_all),
+                "reviewCount": import_report.get("total_needs_review", 0),
+                "questionBank": {
+                    "questionsFound": question_bank_report.get("questions_found", 0),
+                    "answersFound": question_bank_report.get("answers_found", 0),
+                    "needsReview": question_bank_report.get("needs_review", 0),
+                },
+                "trials": {
+                    "questionsFound": trials_report.get("questions_found", 0),
+                    "answersFound": trials_report.get("answers_found", 0),
+                    "needsReview": trials_report.get("needs_review", 0),
+                },
+            },
+        }
         json_response(self, payload)
 
     def api_attempts(self) -> None:

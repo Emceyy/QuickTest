@@ -58,6 +58,14 @@ function number(value) {
   return new Intl.NumberFormat("tr-TR").format(value ?? 0);
 }
 
+function percentLabel(value) {
+  return `${new Intl.NumberFormat("tr-TR", { maximumFractionDigits: 1 }).format(value ?? 0)}%`;
+}
+
+function clampPercent(value) {
+  return Math.max(0, Math.min(100, Number(value) || 0));
+}
+
 function scrollTop() {
   app.focus({ preventScroll: true });
   window.scrollTo({ top: 0, behavior: "smooth" });
@@ -607,13 +615,79 @@ async function saveReviewQuestion(id) {
 async function renderReport() {
   setLoading();
   const report = await api("/api/report");
+  const coverage = report.coverage || {};
+  const today = report.today || {};
+  const allTime = report.allTime || {};
+  const wrong = report.wrong || {};
+  const totals = report.totals || {};
+  const importInfo = report.import || {};
+  const topWrong = report.mostWrongCategory;
   app.innerHTML = `
     <section class="toolbar">
       <h1>Rapor</h1>
       <button class="danger-button" type="button" id="reimportButton">Tekrar Aktar</button>
     </section>
-    <section class="report-panel">
-      <pre>${escapeHtml(JSON.stringify(report, null, 2))}</pre>
+
+    <section class="dashboard-grid" aria-label="Çalışma raporu">
+      <article class="dashboard-card highlight">
+        <span class="dashboard-label">Genel ilerleme</span>
+        <strong class="dashboard-value">${percentLabel(coverage.all?.percent)}</strong>
+        <span class="dashboard-note">${number(coverage.all?.seen)} / ${number(coverage.all?.total)} soru görüldü</span>
+      </article>
+      <article class="dashboard-card">
+        <span class="dashboard-label">Bugün çözülen</span>
+        <strong class="dashboard-value">${number(today.attempts)}</strong>
+        <span class="dashboard-note">${number(today.correct)} doğru · ${number(today.wrong)} yanlış · ${number(today.empty)} boş</span>
+      </article>
+      <article class="dashboard-card">
+        <span class="dashboard-label">Bugünkü doğruluk</span>
+        <strong class="dashboard-value">${percentLabel(today.accuracy)}</strong>
+        <span class="dashboard-note">${number(today.answered)} cevap üzerinden</span>
+      </article>
+      <article class="dashboard-card">
+        <span class="dashboard-label">Yanlış havuzu</span>
+        <strong class="dashboard-value">${number(wrong.karma)}</strong>
+        <span class="dashboard-note">${number(wrong.test)} test · ${number(wrong.trial)} deneme</span>
+      </article>
+      <article class="dashboard-card">
+        <span class="dashboard-label">Toplam soru</span>
+        <strong class="dashboard-value">${number(totals.all)}</strong>
+        <span class="dashboard-note">${number(totals.test)} test · ${number(totals.trial)} deneme</span>
+      </article>
+      <article class="dashboard-card">
+        <span class="dashboard-label">En çok yanlış</span>
+        <strong class="dashboard-value small">${topWrong ? escapeHtml(topWrong.title) : "Henüz yok"}</strong>
+        <span class="dashboard-note">${topWrong ? `${escapeHtml(topWrong.source)} · ${number(topWrong.wrongCount)} yanlış` : "Biraz soru çözdükçe görünür"}</span>
+      </article>
+    </section>
+
+    <section class="report-panel dashboard-section">
+      <div class="section-head">
+        <div>
+          <h2>Havuz ilerlemesi</h2>
+          <p>Bir soruyu en az bir kez cevap ekranına taşıdığında burada çözülmüş sayılır.</p>
+        </div>
+        <span class="pill">${number(allTime.attempts)} toplam çözüm</span>
+      </div>
+      ${renderCoverageRow("Genel", coverage.all)}
+      ${renderCoverageRow("Test", coverage.test)}
+      ${renderCoverageRow("Deneme", coverage.trial)}
+    </section>
+
+    <section class="report-panel dashboard-section compact">
+      <div class="section-head">
+        <div>
+          <h2>Veri durumu</h2>
+          <p>PDF aktarımından gelen kısa sağlık özeti.</p>
+        </div>
+        <span class="pill warn">${number(importInfo.reviewCount)} kontrol</span>
+      </div>
+      <div class="mini-stats">
+        <div><strong>${number(importInfo.questionBank?.questionsFound)}</strong><span>Test sorusu</span></div>
+        <div><strong>${number(importInfo.questionBank?.answersFound)}</strong><span>Test cevabı</span></div>
+        <div><strong>${number(importInfo.trials?.questionsFound)}</strong><span>Deneme sorusu</span></div>
+        <div><strong>${number(importInfo.trials?.answersFound)}</strong><span>Deneme cevabı</span></div>
+      </div>
     </section>
   `;
   app.querySelector("#reimportButton").addEventListener("click", async () => {
@@ -622,6 +696,22 @@ async function renderReport() {
     await init();
   });
   scrollTop();
+}
+
+function renderCoverageRow(label, item = {}) {
+  const pct = clampPercent(item.percent);
+  return `
+    <div class="coverage-row">
+      <div class="coverage-copy">
+        <strong>${escapeHtml(label)}</strong>
+        <span>${number(item.seen)} / ${number(item.total)} soru</span>
+      </div>
+      <div class="coverage-progress" aria-label="${escapeHtml(label)} ilerleme">
+        <span style="width:${pct}%"></span>
+      </div>
+      <strong class="coverage-percent">${percentLabel(item.percent)}</strong>
+    </div>
+  `;
 }
 
 init().catch((error) => {

@@ -4,6 +4,22 @@ Bu proje bilgisayarda yerel çalışan bir web uygulamasıdır. PDF'ler bir kez 
 
 ## Çalıştırma
 
+Kısa yol:
+
+```bash
+cd /Users/emreceylanuysal/Documents/GuncelBilgiler
+make dev
+```
+
+Alternatif kısa yol:
+
+```bash
+cd /Users/emreceylanuysal/Documents/GuncelBilgiler
+./dev.sh
+```
+
+Uzun komut:
+
 ```bash
 cd /Users/emreceylanuysal/Documents/GuncelBilgiler
 /Users/emreceylanuysal/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/bin/python3 app.py
@@ -35,6 +51,13 @@ PDF'lerden veritabanını yeniden oluşturmak için:
 
 ```bash
 cd /Users/emreceylanuysal/Documents/GuncelBilgiler
+make import
+```
+
+Uzun komut:
+
+```bash
+cd /Users/emreceylanuysal/Documents/GuncelBilgiler
 /Users/emreceylanuysal/.cache/codex-runtimes/codex-primary-runtime/dependencies/python/bin/python3 importer.py
 ```
 
@@ -53,4 +76,3 @@ cd /Users/emreceylanuysal/Documents/GuncelBilgiler
 - `Karma Yanlışları`, iki listenin birleşimidir.
 - Yanlış listesindeki bir soru doğru çözülürse listeden otomatik çıkar.
 - Daha önce doğru yapılan bir soru sonradan yanlış yapılırsa tekrar yanlış listesine eklenir.
-
