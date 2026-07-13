@@ -68,6 +68,25 @@ button {
   min-width: 0;
 }
 
+.brand-button {
+  margin: 0;
+  padding: 4px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+
+.brand-button:hover .brand-title {
+  color: var(--accent);
+}
+
+.brand-button:focus-visible {
+  outline: 3px solid rgba(36, 116, 92, 0.24);
+  outline-offset: 3px;
+}
+
 .brand-mark {
   width: 42px;
   height: 42px;
@@ -262,12 +281,85 @@ button {
   font-size: 19px;
 }
 
+.category-card.complete {
+  background: var(--success-soft);
+  border-color: #a8ddb8;
+}
+
+.category-card-head,
+.category-meta {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.category-percent {
+  color: var(--accent);
+  font-size: 16px;
+  font-weight: 850;
+}
+
+.category-progress {
+  height: 9px;
+  margin-top: 14px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e9e4da;
+}
+
+.category-progress span {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: linear-gradient(90deg, var(--accent), var(--accent-2));
+}
+
+.category-card.complete .category-progress span {
+  background: var(--success);
+}
+
+.category-meta {
+  margin-top: 10px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.complete-text {
+  color: var(--success);
+}
+
 .mode-card span,
 .category-card span {
   display: block;
   margin-top: 12px;
   color: var(--muted);
   font-size: 14px;
+}
+
+.category-card .category-percent,
+.category-card .category-meta span {
+  margin-top: 0;
+}
+
+.category-card .category-percent {
+  color: var(--accent);
+  font-size: 16px;
+  font-weight: 850;
+}
+
+.category-card .complete-text {
+  color: var(--success);
+}
+
+.category-card .category-progress span {
+  margin-top: 0;
+  background: linear-gradient(90deg, var(--accent), var(--accent-2));
+}
+
+.category-card.complete .category-progress span {
+  background: var(--success);
 }
 
 .trial-button {
@@ -303,6 +395,26 @@ button {
   flex-wrap: wrap;
   gap: 8px;
   justify-content: flex-end;
+}
+
+.answer-reveal-button {
+  min-height: 28px;
+  padding: 4px 10px;
+  border: 1px solid #e3c076;
+  border-radius: 999px;
+  background: var(--warn-soft);
+  color: var(--warn);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.answer-reveal-button:hover {
+  border-color: var(--warn);
+}
+
+.answer-reveal-button:disabled {
+  cursor: default;
+  opacity: 1;
 }
 
 .question-text {
@@ -358,6 +470,16 @@ button {
 .option-button.wrong {
   background: var(--danger-soft);
   border-color: var(--danger);
+}
+
+.option-button:disabled {
+  cursor: default;
+  opacity: 1;
+}
+
+.reveal-panel {
+  margin-top: 14px;
+  padding-top: 4px;
 }
 
 .quiz-footer {

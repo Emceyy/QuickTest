@@ -1,5 +1,6 @@
 const app = document.querySelector("#app");
 const brandSubtitle = document.querySelector("#brandSubtitle");
+const brandHomeButton = document.querySelector("#brandHomeButton");
 const homeButton = document.querySelector("#homeButton");
 const wrongButton = document.querySelector("#wrongButton");
 const reviewButton = document.querySelector("#reviewButton");
@@ -17,13 +18,17 @@ const state = {
   allQuestions: [],
   currentIndex: 0,
   answers: new Map(),
-  savedQuestionIds: new Set(),
+  savedAnswers: new Map(),
+  revealedAnswers: new Set(),
   sessionId: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()),
   karmaUsedIds: new Set(),
+  isAdvancing: false,
 };
 
 const letters = ["A", "B", "C", "D", "E"];
+const REVEALED_ANSWER = "__REVEALED__";
 
+brandHomeButton.addEventListener("click", () => renderHome());
 homeButton.addEventListener("click", () => renderHome());
 wrongButton.addEventListener("click", () => renderWrongHub());
 reviewButton.addEventListener("click", () => renderReview());
@@ -64,6 +69,21 @@ function percentLabel(value) {
 
 function clampPercent(value) {
   return Math.max(0, Math.min(100, Number(value) || 0));
+}
+
+function firstUnseenQuestionIndex(questions) {
+  const index = questions.findIndex((question) => !question.isSeen);
+  return index === -1 ? 0 : index;
+}
+
+function isRevealedSelection(value) {
+  return value === REVEALED_ANSWER;
+}
+
+function selectedAnswerLabel(value) {
+  if (!value) return "Boş";
+  if (isRevealedSelection(value)) return "Bilmiyorum";
+  return value;
 }
 
 function scrollTop() {
@@ -146,14 +166,29 @@ function renderCategorySelect() {
     </section>
     <section class="category-grid" aria-label="Kategoriler">
       ${state.categories
-        .map(
-          (category) => `
-            <button class="category-card" type="button" data-category-id="${category.id}">
-              <strong>${escapeHtml(category.title)}</strong>
-              <span>${category.startQuestion}-${category.endQuestion} · ${category.questionCount} soru</span>
+        .map((category) => {
+          const seen = category.seenCount || 0;
+          const total = category.questionCount || 0;
+          const remaining = category.remainingCount ?? Math.max(0, total - seen);
+          const progress = category.progressPercent ?? (total ? (seen / total) * 100 : 0);
+          const complete = total > 0 && remaining === 0;
+          return `
+            <button class="category-card ${complete ? "complete" : ""}" type="button" data-category-id="${category.id}">
+              <div class="category-card-head">
+                <strong>${escapeHtml(category.title)}</strong>
+                <span class="category-percent">${percentLabel(progress)}</span>
+              </div>
+              <span>${category.startQuestion}-${category.endQuestion} · ${number(total)} soru</span>
+              <div class="category-progress" aria-label="${escapeHtml(category.title)} ilerleme">
+                <span style="width:${clampPercent(progress)}%"></span>
+              </div>
+              <div class="category-meta">
+                <span>${number(seen)} çözüldü</span>
+                <span class="${complete ? "complete-text" : ""}">${complete ? "Tamamlandı" : `${number(remaining)} kaldı`}</span>
+              </div>
             </button>
-          `
-        )
+          `;
+        })
         .join("")}
     </section>
   `;
@@ -202,10 +237,12 @@ async function startQuiz(mode, value) {
       ? state.categories.find((item) => item.id === value)?.title || "Test"
       : `Deneme ${value}`;
   state.questions = questions;
-  state.currentIndex = 0;
+  state.currentIndex = mode === "test" ? firstUnseenQuestionIndex(questions) : 0;
   state.answers = new Map();
-  state.savedQuestionIds = new Set();
+  state.savedAnswers = new Map();
+  state.revealedAnswers = new Set();
   state.sessionId = crypto.randomUUID ? crypto.randomUUID() : String(Date.now());
+  state.isAdvancing = false;
   renderQuiz();
 }
 
@@ -220,9 +257,11 @@ async function startKarma() {
   state.allQuestions = questions;
   state.questions = [];
   state.answers = new Map();
-  state.savedQuestionIds = new Set();
+  state.savedAnswers = new Map();
+  state.revealedAnswers = new Set();
   state.karmaUsedIds = new Set(karmaState.usedIds || []);
   state.sessionId = crypto.randomUUID ? crypto.randomUUID() : String(Date.now());
+  state.isAdvancing = false;
   pickNextKarmaQuestion();
 }
 
@@ -286,8 +325,10 @@ async function startWrong(bucket) {
   state.questions = questions;
   state.currentIndex = 0;
   state.answers = new Map();
-  state.savedQuestionIds = new Set();
+  state.savedAnswers = new Map();
+  state.revealedAnswers = new Set();
   state.sessionId = crypto.randomUUID ? crypto.randomUUID() : String(Date.now());
+  state.isAdvancing = false;
   renderQuiz();
 }
 
@@ -309,6 +350,7 @@ function pickNextKarmaQuestion() {
 function renderQuiz() {
   const question = state.questions[state.currentIndex];
   const selected = state.answers.get(question.id);
+  const revealed = state.revealedAnswers.has(question.id) || isRevealedSelection(selected);
   const total = state.questions.length;
   const answeredCount = state.answers.size;
   const progress = state.mode === "karma"
@@ -331,6 +373,9 @@ function renderQuiz() {
         <div class="question-source">
           <span class="pill">${escapeHtml(question.sourceLabel)}</span>
           <span class="pill">Sayfa ${question.pageNo}</span>
+          <button class="answer-reveal-button" type="button" id="revealAnswer" ${revealed ? "disabled" : ""}>
+            ${revealed ? "Yanlışlara eklendi" : "Cevabı Göster"}
+          </button>
         </div>
       </div>
 
@@ -339,7 +384,7 @@ function renderQuiz() {
         ${letters
           .map(
             (letter) => `
-              <button class="option-button ${selected === letter ? "selected" : ""}" type="button" data-answer="${letter}">
+              <button class="option-button ${selected === letter ? "selected" : ""} ${revealed && question.correctAnswer === letter ? "correct" : ""}" type="button" data-answer="${letter}" ${revealed ? "disabled" : ""}>
                 <span class="option-letter">${letter}</span>
                 <span>${escapeHtml(question.options[letter] || "")}</span>
               </button>
@@ -347,6 +392,16 @@ function renderQuiz() {
           )
           .join("")}
       </div>
+
+      ${revealed ? `
+        <div class="reveal-panel">
+          <div class="answer-line">
+            <span class="pill bad">Yanlışlara eklendi</span>
+            <span class="pill good">Doğru cevap: ${question.correctAnswer}</span>
+          </div>
+          ${question.explanation ? `<div class="explanation">${escapeHtml(question.explanation)}</div>` : ""}
+        </div>
+      ` : ""}
 
       <div class="quiz-footer">
         <div class="progress-wrap">
@@ -357,8 +412,8 @@ function renderQuiz() {
           <div class="progress-bar"><span style="width:${progress}%"></span></div>
         </div>
         <div class="button-row">
-          ${state.currentIndex > 0 && state.mode !== "karma" ? '<button class="secondary-button" type="button" id="prevQuestion">Önceki</button>' : ""}
-          <button class="secondary-button" type="button" id="blankQuestion">Boş Bırak</button>
+          ${state.currentIndex > 0 ? '<button class="secondary-button" type="button" id="prevQuestion">Önceki</button>' : ""}
+          <button class="secondary-button" type="button" id="blankQuestion" ${revealed ? "disabled" : ""}>Boş Bırak</button>
           <button class="primary-button" type="button" id="nextQuestion">${nextLabel()}</button>
           ${state.answers.size ? '<button class="ghost-button" type="button" id="showResults">Sonuç</button>' : ""}
         </div>
@@ -367,11 +422,13 @@ function renderQuiz() {
   `;
 
   app.querySelectorAll("[data-answer]").forEach((button) => {
-    button.addEventListener("click", () => {
+    button.addEventListener("click", async () => {
+      if (revealed) return;
       state.answers.set(question.id, button.dataset.answer);
-      renderQuiz();
+      await advanceFromQuestion(question);
     });
   });
+  app.querySelector("#revealAnswer").addEventListener("click", () => revealAnswer(question));
   const prev = app.querySelector("#prevQuestion");
   if (prev) prev.addEventListener("click", () => {
     state.currentIndex = Math.max(0, state.currentIndex - 1);
@@ -381,9 +438,39 @@ function renderQuiz() {
     state.answers.set(question.id, null);
     renderQuiz();
   });
-  app.querySelector("#nextQuestion").addEventListener("click", async () => {
-    if (!state.answers.has(question.id)) return;
+  app.querySelector("#nextQuestion").addEventListener("click", () => advanceFromQuestion(question));
+  const showResults = app.querySelector("#showResults");
+  if (showResults) showResults.addEventListener("click", renderResults);
+  scrollTop();
+}
+
+async function revealAnswer(question) {
+  if (state.isAdvancing) return;
+  state.isAdvancing = true;
+  state.revealedAnswers.add(question.id);
+  state.answers.set(question.id, REVEALED_ANSWER);
+  try {
+    await saveAttempts([{
+      question,
+      selected: REVEALED_ANSWER,
+      isCorrect: false,
+    }]);
+    renderQuiz();
+  } finally {
+    state.isAdvancing = false;
+  }
+}
+
+async function advanceFromQuestion(question) {
+  if (state.isAdvancing || !state.answers.has(question.id)) return;
+  state.isAdvancing = true;
+  try {
     if (state.mode === "karma") {
+      if (state.currentIndex + 1 < state.questions.length) {
+        state.currentIndex += 1;
+        renderQuiz();
+        return;
+      }
       const selectedAnswer = state.answers.get(question.id);
       await saveAttempts([{
         question,
@@ -399,16 +486,21 @@ function renderQuiz() {
       pickNextKarmaQuestion();
       return;
     }
+    const selectedAnswer = state.answers.get(question.id);
+    await saveAttempts([{
+      question,
+      selected: selectedAnswer,
+      isCorrect: selectedAnswer === question.correctAnswer,
+    }]);
     if (state.currentIndex + 1 >= state.questions.length) {
-      renderResults();
+      await renderResults();
     } else {
       state.currentIndex += 1;
       renderQuiz();
     }
-  });
-  const showResults = app.querySelector("#showResults");
-  if (showResults) showResults.addEventListener("click", renderResults);
-  scrollTop();
+  } finally {
+    state.isAdvancing = false;
+  }
 }
 
 function nextLabel() {
@@ -417,20 +509,20 @@ function nextLabel() {
 }
 
 async function saveAttempts(results) {
-  const unsaved = results.filter((item) => !state.savedQuestionIds.has(item.question.id));
-  if (!unsaved.length) return;
+  const changed = results.filter((item) => state.savedAnswers.get(item.question.id) !== item.selected);
+  if (!changed.length) return;
   await api("/api/attempts", {
     method: "POST",
     body: JSON.stringify({
       sessionId: state.sessionId,
       mode: state.mode,
-      answers: unsaved.map((item) => ({
+      answers: changed.map((item) => ({
         questionId: item.question.id,
         selectedAnswer: item.selected,
       })),
     }),
   });
-  unsaved.forEach((item) => state.savedQuestionIds.add(item.question.id));
+  changed.forEach((item) => state.savedAnswers.set(item.question.id, item.selected));
   state.wrongSummary = await api("/api/wrong-summary");
 }
 
@@ -482,7 +574,8 @@ async function renderResults() {
   if (retryWrong) retryWrong.addEventListener("click", () => {
     state.questions = results.filter((item) => item.selected && !item.isCorrect).map((item) => item.question);
     state.answers = new Map();
-    state.savedQuestionIds = new Set();
+    state.savedAnswers = new Map();
+    state.revealedAnswers = new Set();
     state.currentIndex = 0;
     state.modeLabel = "Yanlışlar";
     renderQuiz();
@@ -513,7 +606,7 @@ function renderResultCard(item, index) {
           .join("")}
       </div>
       <div class="answer-line">
-        <span class="pill">İşaretlenen: ${selected || "Boş"}</span>
+        <span class="pill">İşaretlenen: ${escapeHtml(selectedAnswerLabel(selected))}</span>
         <span class="pill good">Doğru cevap: ${question.correctAnswer}</span>
       </div>
       ${question.explanation ? `<div class="explanation">${escapeHtml(question.explanation)}</div>` : ""}

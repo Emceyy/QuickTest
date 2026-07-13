@@ -40,6 +40,8 @@ def ensure_runtime_schema() -> None:
                 UNIQUE(question_id, bucket)
             );
 
+            CREATE INDEX IF NOT EXISTS idx_attempts_question ON attempts(question_id);
+            CREATE INDEX IF NOT EXISTS idx_attempts_created_at ON attempts(created_at);
             CREATE INDEX IF NOT EXISTS idx_wrong_questions_bucket ON wrong_questions(bucket);
             CREATE INDEX IF NOT EXISTS idx_wrong_questions_question ON wrong_questions(question_id);
             """
@@ -54,6 +56,7 @@ def db() -> sqlite3.Connection:
 
 
 def row_to_question(row: sqlite3.Row) -> dict[str, object]:
+    keys = row.keys()
     display = (
         f"Deneme {row['trial_no']} / Soru {row['trial_question_no']}"
         if row["source"] == "trial"
@@ -67,7 +70,7 @@ def row_to_question(row: sqlite3.Row) -> dict[str, object]:
         "display": display,
         "sourceQuestionNo": row["source_question_no"],
         "categoryId": row["category_id"],
-        "categoryTitle": row["category_title"] if "category_title" in row.keys() else None,
+        "categoryTitle": row["category_title"] if "category_title" in keys else None,
         "trialNo": row["trial_no"],
         "trialQuestionNo": row["trial_question_no"],
         "pageNo": row["page_no"],
@@ -84,6 +87,8 @@ def row_to_question(row: sqlite3.Row) -> dict[str, object]:
         "rawText": row["raw_text"],
         "needsReview": bool(row["needs_review"]),
         "reviewNotes": json.loads(row["review_notes"] or "[]"),
+        "isSeen": bool(row["is_seen"]) if "is_seen" in keys else False,
+        "lastSelectedAnswer": row["last_selected_answer"] if "last_selected_answer" in keys else None,
     }
 
 
@@ -104,9 +109,9 @@ def read_json(handler: SimpleHTTPRequestHandler) -> dict:
     return json.loads(raw)
 
 
-def question_select_sql(where: str = "", order: str = "") -> str:
+def question_select_sql(where: str = "", order: str = "", extra_select: str = "") -> str:
     return f"""
-        SELECT q.*, c.title AS category_title
+        SELECT q.*, c.title AS category_title{extra_select}
         FROM questions q
         LEFT JOIN categories c ON c.id = q.category_id
         {where}
@@ -270,9 +275,13 @@ class KPSSHandler(SimpleHTTPRequestHandler):
         with db() as con:
             rows = con.execute(
                 """
-                SELECT c.*, COUNT(q.id) AS question_count
+                SELECT
+                    c.*,
+                    COUNT(DISTINCT q.id) AS question_count,
+                    COUNT(DISTINCT a.question_id) AS seen_count
                 FROM categories c
                 LEFT JOIN questions q ON q.category_id = c.id
+                LEFT JOIN attempts a ON a.question_id = q.id
                 GROUP BY c.id
                 ORDER BY c.start_question
                 """
@@ -286,6 +295,9 @@ class KPSSHandler(SimpleHTTPRequestHandler):
                     "startQuestion": row["start_question"],
                     "endQuestion": row["end_question"],
                     "questionCount": row["question_count"],
+                    "seenCount": row["seen_count"],
+                    "remainingCount": max(0, row["question_count"] - row["seen_count"]),
+                    "progressPercent": percent(row["seen_count"], row["question_count"]),
                 }
                 for row in rows
             ],
@@ -316,6 +328,20 @@ class KPSSHandler(SimpleHTTPRequestHandler):
                     question_select_sql(
                         "WHERE q.source = 'question_bank' AND q.category_id = ?",
                         "ORDER BY q.source_question_no",
+                        """,
+                        EXISTS(
+                            SELECT 1
+                            FROM attempts a
+                            WHERE a.question_id = q.id
+                        ) AS is_seen,
+                        (
+                            SELECT a.selected_answer
+                            FROM attempts a
+                            WHERE a.question_id = q.id
+                            ORDER BY a.created_at DESC, a.id DESC
+                            LIMIT 1
+                        ) AS last_selected_answer
+                        """,
                     ),
                     (category_id,),
                 ).fetchall()

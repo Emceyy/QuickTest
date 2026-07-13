@@ -315,6 +315,9 @@ def create_schema(con: sqlite3.Connection) -> None:
             created_at TEXT NOT NULL
         );
 
+        CREATE INDEX idx_attempts_question ON attempts(question_id);
+        CREATE INDEX idx_attempts_created_at ON attempts(created_at);
+
         CREATE TABLE wrong_questions (
             id INTEGER PRIMARY KEY,
             question_id INTEGER NOT NULL REFERENCES questions(id) ON DELETE CASCADE,
